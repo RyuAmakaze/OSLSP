@@ -14,6 +14,6 @@ python3 -m torch.distributed.launch \
 --local_crops_number=1 \
 --osllp_bins 31 \
 --bag_num 100 \
---data_path workspace/data/PILOT_TEST \
---output_dir workspace/data/output
+--data_path ./data/PILOT_TEST \
+--output_dir ./OSLSP_output
 ```
