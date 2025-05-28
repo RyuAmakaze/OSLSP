@@ -29,6 +29,16 @@ import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torchvision import models as torchvision_models
+from config import (
+    DAY_PROP as DayProp,
+    CLASS_DIVER as ClassDiver,
+    GAUSSIAN_SIGMA,
+    RESIZE,
+    GLOBAL_CROP_SIZE,
+    LOCAL_CROP_SIZE,
+    NORMALIZATION_MEAN,
+    NORMALIZATION_STD,
+)
 
 import utils
 import vision_transformer as vits
@@ -171,9 +181,9 @@ def train_dino(args):
 
     #valid用のデータloader
     val_transform = transforms.Compose([
-        transforms.Resize(64), 
+        transforms.Resize(RESIZE), 
         transforms.ToTensor(),
-        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        transforms.Normalize(NORMALIZATION_MEAN, NORMALIZATION_STD),
     ])
     if(args.test_data_path!=""):
         dataset_val = datasets.ImageFolder(args.test_data_path, transform=val_transform)
@@ -323,42 +333,9 @@ def train_dino(args):
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
 
-###############################################################################################################
-#Define yamaoka add
-#日付ごとの各クラスの割合を定義
-"""
-DayProp = [
-    [0.00, 1.0, 0.00, 0.00, 0.0],#day0(blue, red, pink, orange, yellow)
-    [0.59, 0.0, 0.00, 0.00, 0.41],#day3(blue, red, pink, orange, yellow)
-    [0.17, 0.0, 0.00, 0.55, 0.28],#day5(blue, red, pink, orange, yellow)
-    [0.12, 0.0, 0.06, 0.77, 0.05],#day7(blue, red, pink, orange, yellow)
-    [0.01, 0.0, 0.97, 0.01, 0.00] #day14(blue, red, orange, orange, yellow)
-]
-
-#クラス類似度の定義
-ClassDiver = [
-    [1,   3/4,  1/2,  1/4, 0], #blue-blue, blue-red, blue-pink, blue-orange, blue-yellow
-    [3/4,  1,   3/4,  2/4, 1/4], #red-blue, red-red, red-pink, red-orange, red-yellow
-    [1/2,  3/4,  1,  3/4, 1/2], #pink-blue, pink-red, pink-pink, pink-orange, pink-yellow
-    [1/4, 1/2,  3/4,  1 , 3/4], #orange-blue, orange-red, orange-pink, orange-orange, orange-yellow
-    [0,   1/4,  1/2,  3/4,  1 ]  #yellow-blue, yellow-red, yellow-pink, yellow-orange, yellow-yellow
-]"""
-
-"""PILOT"""
-DayProp = [
-    [0.5, 0.5, 0.0, 0.0],#day0(tri, quad, penta, hexa)
-    [0.0, 0.5, 0.5, 0.0],#day3(tri, quad, penta, hexa)
-    [0.33, 0.0, 0.33, 0.33],#day5(tri, quad, penta, hexa)
-    [0.4, 0.4, 0.2, 0.0],#day7(tri, quad, penta, hexa)
-    [0.1, 0, 0.1, 0.8]#day14(tri, quad, penta, hexa)
-]
-ClassDiver = [
-    [1,   2/3,  1/3,  0], #(tri-tri, tri-quad, tri-penta, tri-hexa)
-    [2/3,  1,   2/3,  1/3], #(quad-tri, quad-quad, quad-penta, quad-hexa)
-    [1/3,  2/3,   1,  2/3], #(penta-tri, penta-quad, penta-penta, penta-hexa)
-    [0,    1/3,  2/3,  1 ]  #(hexa-tri, hexa-quad, hexa-penta, hexa-hexa)
-]
-
+################################################################################
+# Constants for day proportions and class divergence are provided by config.py
+################################################################################
 
 #class同士のsimを返す
 def Class_Divergence(classA, classB):
@@ -441,14 +418,14 @@ def train_one_epoch(student, Backbone_model, lsp_loss, data_loader,
         transforms.RandomGrayscale(p=0.2),
     ])
     transform_global = transforms.Compose([
-        transforms.Resize(64), 
+        transforms.Resize(RESIZE), 
         transforms.ToTensor(),
-        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        transforms.Normalize(NORMALIZATION_MEAN, NORMALIZATION_STD),
     ])
     transform_local = transforms.Compose([
-        transforms.Resize(64), 
+        transforms.Resize(RESIZE), 
         transforms.ToTensor(),
-        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        transforms.Normalize(NORMALIZATION_MEAN, NORMALIZATION_STD),
     ]) 
     dataset = data_loader.dataset  
     print(dataset.imgs[0]) 
@@ -538,7 +515,7 @@ def train_one_epoch(student, Backbone_model, lsp_loss, data_loader,
         #推論側の分布
         Infe_Distribution = cos_sim_outputs#F.softmax(cos_sim_outputs, dim=0)
         #Infe_Histgram = custom_histc(Infe_Distribution, bins=args.osllp_bins, range_min=0, range_max=1)
-        Infe_Histgram = GaussianHistogram(bins=args.osllp_bins, min=0, max=1, sigma=0.1)(Infe_Distribution)
+        Infe_Histgram = GaussianHistogram(bins=args.osllp_bins, min=0, max=1, sigma=GAUSSIAN_SIGMA)(Infe_Distribution)
         Infe_Histgram = Infe_Histgram / Infe_Histgram.sum()
         print("Infe_Histgram:", Infe_Histgram)
 
@@ -547,7 +524,7 @@ def train_one_epoch(student, Backbone_model, lsp_loss, data_loader,
         True_Distribution = DayCombo_to_FeatNumData(item1_day_class, item2_day_class, args.bag_num)
         print("True_Distribution", True_Distribution)
         #True_Histgram = custom_histc(True_Distribution, bins=args.osllp_bins, range_min=0, range_max=1)#cos simの値は0から1
-        True_Histgram = GaussianHistogram(bins=args.osllp_bins, min=0, max=1, sigma=0.1)(True_Distribution)
+        True_Histgram = GaussianHistogram(bins=args.osllp_bins, min=0, max=1, sigma=GAUSSIAN_SIGMA)(True_Distribution)
         True_Histgram = True_Histgram / True_Histgram.sum()
         print("True_Histgram:", True_Histgram)
         
@@ -709,19 +686,19 @@ class DataAugmentationDINO(object):
         ])
         normalize = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+            transforms.Normalize(NORMALIZATION_MEAN, NORMALIZATION_STD),
         ])
 
         # first global crop
         self.global_transfo1 = transforms.Compose([
-            transforms.RandomResizedCrop(224, scale=global_crops_scale, interpolation=Image.BICUBIC),
+            transforms.RandomResizedCrop(GLOBAL_CROP_SIZE, scale=global_crops_scale, interpolation=Image.BICUBIC),
             flip_and_color_jitter,
             utils.GaussianBlur(1.0),
             normalize,
         ])
         # second global crop
         self.global_transfo2 = transforms.Compose([
-            transforms.RandomResizedCrop(224, scale=global_crops_scale, interpolation=Image.BICUBIC),
+            transforms.RandomResizedCrop(GLOBAL_CROP_SIZE, scale=global_crops_scale, interpolation=Image.BICUBIC),
             flip_and_color_jitter,
             utils.GaussianBlur(0.1),
             utils.Solarization(0.2),
@@ -730,7 +707,7 @@ class DataAugmentationDINO(object):
         # transformation for the local small crops
         self.local_crops_number = local_crops_number
         self.local_transfo = transforms.Compose([
-            transforms.RandomResizedCrop(96, scale=local_crops_scale, interpolation=Image.BICUBIC),
+            transforms.RandomResizedCrop(LOCAL_CROP_SIZE, scale=local_crops_scale, interpolation=Image.BICUBIC),
             flip_and_color_jitter,
             utils.GaussianBlur(p=0.5),
             normalize,
