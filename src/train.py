@@ -38,6 +38,20 @@ from config import (
     LOCAL_CROP_SIZE,
     NORMALIZATION_MEAN,
     NORMALIZATION_STD,
+    HORIZONTAL_FLIP_PROB,
+    COLOR_JITTER_BRIGHTNESS,
+    COLOR_JITTER_CONTRAST,
+    COLOR_JITTER_SATURATION,
+    COLOR_JITTER_HUE,
+    COLOR_JITTER_PROB,
+    RANDOM_GRAYSCALE_PROB,
+    GAUSSIAN_BLUR1_PROB,
+    GAUSSIAN_BLUR2_PROB,
+    GAUSSIAN_BLUR_LOCAL_PROB,
+    SOLARIZATION_PROB,
+    MLP_HIDDEN_DIM_1,
+    MLP_HIDDEN_DIM_2,
+    VALID_LOG_FREQ,
 )
 
 import utils
@@ -410,12 +424,17 @@ def train_one_epoch(student, Backbone_model, lsp_loss, data_loader,
     ############################################################################################################
     #同じ日付クラスから2枚をglobal, 引数の画像をlocalにして学習
     flip_and_color_jitter = transforms.Compose([
-        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomHorizontalFlip(p=HORIZONTAL_FLIP_PROB),
         transforms.RandomApply(
-            [transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)],
-            p=0.8
+            [transforms.ColorJitter(
+                brightness=COLOR_JITTER_BRIGHTNESS,
+                contrast=COLOR_JITTER_CONTRAST,
+                saturation=COLOR_JITTER_SATURATION,
+                hue=COLOR_JITTER_HUE,
+            )],
+            p=COLOR_JITTER_PROB,
         ),
-        transforms.RandomGrayscale(p=0.2),
+        transforms.RandomGrayscale(p=RANDOM_GRAYSCALE_PROB),
     ])
     transform_global = transforms.Compose([
         transforms.Resize(RESIZE), 
@@ -677,12 +696,17 @@ class lspLoss(nn.Module):
 class DataAugmentationDINO(object):
     def __init__(self, global_crops_scale, local_crops_scale, local_crops_number):
         flip_and_color_jitter = transforms.Compose([
-            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomHorizontalFlip(p=HORIZONTAL_FLIP_PROB),
             transforms.RandomApply(
-                [transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)],
-                p=0.8
+                [transforms.ColorJitter(
+                    brightness=COLOR_JITTER_BRIGHTNESS,
+                    contrast=COLOR_JITTER_CONTRAST,
+                    saturation=COLOR_JITTER_SATURATION,
+                    hue=COLOR_JITTER_HUE,
+                )],
+                p=COLOR_JITTER_PROB,
             ),
-            transforms.RandomGrayscale(p=0.2),
+            transforms.RandomGrayscale(p=RANDOM_GRAYSCALE_PROB),
         ])
         normalize = transforms.Compose([
             transforms.ToTensor(),
@@ -693,15 +717,15 @@ class DataAugmentationDINO(object):
         self.global_transfo1 = transforms.Compose([
             transforms.RandomResizedCrop(GLOBAL_CROP_SIZE, scale=global_crops_scale, interpolation=Image.BICUBIC),
             flip_and_color_jitter,
-            utils.GaussianBlur(1.0),
+            utils.GaussianBlur(GAUSSIAN_BLUR1_PROB),
             normalize,
         ])
         # second global crop
         self.global_transfo2 = transforms.Compose([
             transforms.RandomResizedCrop(GLOBAL_CROP_SIZE, scale=global_crops_scale, interpolation=Image.BICUBIC),
             flip_and_color_jitter,
-            utils.GaussianBlur(0.1),
-            utils.Solarization(0.2),
+            utils.GaussianBlur(GAUSSIAN_BLUR2_PROB),
+            utils.Solarization(SOLARIZATION_PROB),
             normalize,
         ])
         # transformation for the local small crops
@@ -709,7 +733,7 @@ class DataAugmentationDINO(object):
         self.local_transfo = transforms.Compose([
             transforms.RandomResizedCrop(LOCAL_CROP_SIZE, scale=local_crops_scale, interpolation=Image.BICUBIC),
             flip_and_color_jitter,
-            utils.GaussianBlur(p=0.5),
+            utils.GaussianBlur(p=GAUSSIAN_BLUR_LOCAL_PROB),
             normalize,
         ])
 
@@ -725,9 +749,9 @@ class DataAugmentationDINO(object):
 class MLP(nn.Module):
     def __init__(self, dim, out_dim):
         super().__init__() # python3では引数省略可能
-        self.fc1 = nn.Linear(dim, 128, bias=True)
-        self.fc2 = nn.Linear(128, 64, bias=True)
-        self.fc3 = nn.Linear(64, out_dim, bias=True)
+        self.fc1 = nn.Linear(dim, MLP_HIDDEN_DIM_1, bias=True)
+        self.fc2 = nn.Linear(MLP_HIDDEN_DIM_1, MLP_HIDDEN_DIM_2, bias=True)
+        self.fc3 = nn.Linear(MLP_HIDDEN_DIM_2, out_dim, bias=True)
         self.relu = nn.ReLU()
 
     def forward(self, x):
@@ -751,7 +775,7 @@ def validate_network(val_loader, model, n, avgpool):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
-    for inp, target in metric_logger.log_every(val_loader, 20, header):
+    for inp, target in metric_logger.log_every(val_loader, VALID_LOG_FREQ, header):
         """TESTは以下の配列で入っている
             0: 'blue', -> 0
             1: 'orange', -> 3
